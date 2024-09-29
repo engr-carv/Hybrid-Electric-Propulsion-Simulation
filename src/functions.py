@@ -45,7 +45,7 @@ def mission_char(cruise_alt, gamma):
     MissionCharacteristics: A dataclass containing speed of sound and density.
     """
     # Generate altitude range in meters
-    altitude_range = np.arange(0, cruise_alt + 1)                               # Altitudes from when mach climb starts to cruise
+    altitude_range = np.arange(0, cruise_alt + 1, 0.1)                               # Altitudes from when mach climb starts to cruise
 
     speeds_of_sound = []
     densities = []
@@ -96,81 +96,101 @@ def prop_char(power_thru, phi, spe, batt_m, eta_g, eta_inv, eta_c, eta_em,
 
     return prp
         
-
-def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap):
+def charge_batt(P, t, phi, eta_ts_to_prop, delH_f, batt_thru, eta_ts_to_charge, cap):
+    m_fuel = ((P * t) + (batt_thru * t)) / \
+        ((eta_ts_to_prop + eta_ts_to_charge) * \
+         delH_f)                                                                # Fuel burnt is that of both charging the battery and providing propulsive power
+    cap += batt_thru * t  
+    return cap, m_fuel
+        
+def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
     """
     Calculates the fuel burned based on the flight phase.
     """
     
     match n:
         
-        case 1:  # Takeoff
-            T_TO = 130290  # thrust at takeoff [N]
-            P_TO = T_TO * AC['v2']  # power required for takeoff [W]
+        case 1:                 # Takeoff
+            T_TO = 130290                       # thrust at takeoff [N]
+            P_TO = T_TO * AC['v2']              # power required for takeoff [W]
             
             if cap >= P_TO * 300:               # No fuel used if battery is sufficient enough to maintain power requirements for all of takeoff
                 m_fuel = 0
                 cap -= (P_TO * t) / prp['eta_batt_to_prop']
     
             else:
-                m_fuel = (P_TO * (1 - prp['batt']['phi']) * t) / (prp['eta_ts_to_prop'][0] * prp['ts']['delH_f'])
+                m_fuel = (P_TO * (1 - prp['batt']['phi']) * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
                 cap -= (P_TO * t * prp['batt']['phi']) / prp['eta_batt_to_prop']
 
-        case 2:  # Climb
+        case 2:                 # Climb
             P_climb = T * v_climb  # power required to climb
-            if cap <= prp['empty_charge']:               # If battery is less than or equal to 20% charged
-                m_fuel = ((P_climb * t) + (prp['batt']['power_thru'] * t)) / ((prp['eta_ts_to_prop'][0] + prp['eta_ts_to_charge'][0]) * prp['ts']['delH_f'])
-                cap += (prp['batt']['power_thru']) * t # battery is charged at 1 MW
-            elif cap <= prp['full_charge']:                          #if battery has sufficient charge
-                m_fuel = (P_climb * (1 - prp['batt']['phi']) * t) / (prp['eta_ts_to_prop'][0] * prp['ts']['delH_f'])
+            
+            if cap <= prp['empty_charge']:                                      # If battery is less than or equal to 20% charged
+                m_fuel = ((P_climb * t) + (prp['batt']['power_thru'] * t)) / \
+                ((prp['eta_ts_to_prop'][2] + prp['eta_ts_to_charge'][2]) * \
+                 prp['ts']['delH_f'])                                           # Fuel burnt is that of both charging the battery and providing propulsive power
+                cap += (prp['batt']['power_thru']) * t                          # battery is charged at 1 MW
+                
+            elif cap <= prp['full_charge']:                                     # if battery has sufficient charge
+                m_fuel = (P_climb * (1 - prp['batt']['phi']) * t) / \
+                (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
                 cap -= (P_climb * t * prp['batt']['phi']) / prp['eta_batt_to_prop']
 
-        case 3:  # Cruise
+        case 3:                 # Cruise
             P_cruise = T * v_cruise  # power required for cruise
             t_batt_afterClimbTO = cap / (P_cruise * prp['eta_batt_to_prop'])
             
             t_elapsed_after_climb = t + t_idx
             
-            if t_elapsed_after_climb < t_batt_afterClimbTO:
-                m_fuel = 0  # No fuel burned if battery is still usable
+            if t_elapsed_after_climb < t_batt_afterClimbTO:                     # No fuel burned if battery is still usable
+                m_fuel = 0  
+                
             else:
-                # charging phase
-                if cap <= 0.3 * prp['full_charge']:
+                # Charging Phase
+                if cap <= prp['empty_charge']:
                     # Calculate fuel burn while charging
-                    m_fuel = ((P_cruise * t) + (prp['batt']['power_thru'] * t)) / (
-                        (prp['eta_ts_to_prop'][-1] + prp['eta_ts_to_charge'][-1]) * prp['ts']['delH_f'])
+                    cap, m_fuel = charge_batt(P_cruise, t, 0, 
+                                              prp['eta_ts_to_prop'][2], 
+                                              prp['ts']['delH_f'], 
+                                              prp['batt']['power_thru'], 
+                                              prp['eta_ts_to_charge'][2], cap)
+                    charge_status = True                # To ensure that fuel is only used when charging
+                
+                    # Handle case where cap is between 30% and 100% but not at full capacity
+                elif prp['empty_charge'] < cap < prp['full_charge'] and charge_status is True:
                     
-                    # Charge the battery
-                    cap += (prp['batt']['power_thru']) * t  # Battery is charged at 1 MW
-                    
-                    # Ensure the battery does not exceed full capacity
-                    if cap > prp['full_charge']:
-                        cap = prp['full_charge']  # Set to max capacity if exceeded
-            
+                        cap, m_fuel = charge_batt(P_cruise, t, 0, 
+                                              prp['eta_ts_to_prop'][2], 
+                                              prp['ts']['delH_f'], 
+                                              prp['batt']['power_thru'], 
+                                              prp['eta_ts_to_charge'][2], cap)
+                        # Ensure the battery does not exceed full capacity
+                        if cap > prp['full_charge']:
+                            cap = prp['full_charge']  # Set to max capacity if exceeded
+                            
                 # Depleting Phase
-                elif cap > 0.3 * prp['full_charge'] and cap == prp['full_charge']:
+                elif cap == prp['full_charge']:
                     # No fuel burned while battery is being depleted
                     m_fuel = 0
                     
                     # Deplete the battery until it reaches 30%
                     cap -= (P_cruise * t) / prp['eta_batt_to_prop']  # Deplete the battery
                     
-                    # Ensure the capacity does not fall below 30%
-                    if cap < 0.3 * prp['full_charge']:
-                        cap = 0.3 * prp['full_charge']  # Set to minimum capacity if below
-                
-                # Handle case where cap is between 30% and 100% but not at full capacity
-                elif 0.3 * prp['full_charge'] < cap < prp['full_charge']:
-                    m_fuel = 0;
-                    
-                    # Deplete the battery until it reaches 30%
-                    cap -= (P_cruise * t) / prp['eta_batt_to_prop']  # Deplete the battery
-                    
-                    # Ensure the capacity does not fall below 30%
-                    if cap < 0.3 * prp['full_charge']:
-                        cap = 0.3 * prp['full_charge']  # Set to minimum capacity if below       
+                    charge_status = False
+                        
+                    # Deplete battery without using fuel
+                elif prp['empty_charge'] < cap < prp['full_charge'] and charge_status is False:
+                        m_fuel = 0;
+                        
+                        # Deplete the battery until it reaches 30%
+                        cap -= (P_cruise * t) / prp['eta_batt_to_prop']  # Deplete the battery
+                        
+                        # Ensure the capacity does not fall below 30%
+                        if cap < prp['empty_charge']:
+                            cap = prp['empty_charge'] # Set to minimum capacity if below  
+     
 
-    return m_fuel, cap
+    return m_fuel, cap, charge_status
 
 def drag_polar(L, q, AC):
     """
@@ -181,3 +201,4 @@ def drag_polar(L, q, AC):
     L_D = c_l / c_d # Lift-to-drag ratio
  
     return L_D
+

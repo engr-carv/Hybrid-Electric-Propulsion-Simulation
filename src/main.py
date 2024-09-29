@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 This is a script that calculates the fuel burned by a modifiable serial hybrid 
 electric aircraft
@@ -18,6 +17,7 @@ electric aircraft
 import numpy as np
 import matplotlib.pyplot as plt
 from functions import mission_char, prop_char, fuel_burn, drag_polar
+import math
 
 # Constants and Conversion Factors
 NAUMI_TO_MET = 1852     # Conversion factor of Nautical Miles to Meters
@@ -27,10 +27,10 @@ g = 9.81                # Acceleration due to gravity [m/s2]
 gamma = 1.4             # Specific heat ratio of air [-]
 
 # Inputs
-time_stp = 100                       # Time step for force balance calcs [sec]
+time_stp = 0.05                       # Time step for force balance calcs [sec]
 mission_range = 3400 * NAUMI_TO_MET     # Length of mission [nm] -> [m]
 batt_phi = 0.5                          # Power split (hybridization metric) [-]
-batt_spe = 250 * WH_TO_J                # Battery specific energy [Wh/kg] -> [J/kg]
+batt_spe = 600 * WH_TO_J                # Battery specific energy [Wh/kg] -> [J/kg]
 batt_m = 1e4                            # Battery mass [kg]
 batt_power_thru = 1e6                   # Battery power throughput [W]
 cruise_alt = 39000 * FT_TO_MET          # Cruise Altitude [ft] -> [m]
@@ -74,7 +74,8 @@ prp = prop_char(batt_power_thru, batt_phi, batt_spe, batt_m, eta_g, eta_inv,
 
 # Initialization For Flight While Loop
 m_fuel = []                     # Fuel burn array [kg]
-cap = prp['full_charge']           # Battery capacity at 100% 
+cap = prp['full_charge']        # Battery capacity at 100% 
+charge_status = False           # Initialize charge_status to not charging
 j = 0                           # Index for determining which rates of climb and horizontal velocites to use in which phases of flight
 y_total = 0                     # Total horizontal distance covered [m]
 x_total = 0                     # Total vertical distance covered [m]
@@ -82,6 +83,7 @@ t = 0                           # Total time the has passed [sec]
 
 dist = [0]                      # Array to contain instantaneous horizontal distance for graphing purposes
 alti = [0]                      # Array to contain instantaneous vertical distance for graphing purposes
+
 
 '''
 Flight While Loop:
@@ -93,7 +95,7 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
     
     if t <= 300:  # takeoff
         n = 1
-        fuel, cap = fuel_burn(0, time_stp, prp, AC, v_cruise, 0, 0, n, cap)
+        fuel, cap, _ = fuel_burn(0, time_stp, prp, AC, v_cruise, 0, 0, n, cap, charge_status)
         m_fuel.append(fuel)
         t += time_stp  # [sec]
         W -= fuel * g  # [N]
@@ -110,11 +112,11 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
             j += 1  # increase index
 
         if j > 2 and y_total != cruise_alt:  # mach climb
-            x = cruise_M * miss.a[int(y_total - 7315)] * time_stp  # [m]
+            x = cruise_M * miss.a[math.ceil(y_total - 7315)] * time_stp  # [m]
             x_total += x
             dist.append(x_total)
 
-            v_x_adj = cruise_M * miss.a[int(y_total - 7315)]  # [m/s]
+            v_x_adj = cruise_M * miss.a[math.ceil(y_total - 7315)]  # [m/s]
             v_climb = np.sqrt(roc[j]**2 + v_x_adj**2)  # [m/s]
             slope = roc[j] / v_x_adj
 
@@ -124,20 +126,20 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
             D = L / L_D
             T = D + W * np.sin(np.arctan(slope))
 
-            fuel, cap = fuel_burn(T, time_stp, prp, AC, v_cruise, v_climb, 0, n, cap)
+            fuel, cap, _ = fuel_burn(T, time_stp, prp, AC, v_cruise, v_climb, 0, n, cap, charge_status)
             m_fuel.append(fuel)
             t += time_stp
             W -= fuel * g
 
         elif j <= 2:  # normal climbs
-            v_x_adj = v_x[j] * np.sqrt(miss.rho[int(y_total)] / miss.rho[0])
+            v_x_adj = v_x[j] * np.sqrt(miss.rho[math.ceil(y_total)] / miss.rho[0])
             v_climb = np.sqrt(roc[j]**2 + v_x_adj**2)  # [m/s]
             slope = roc[j] / v_x_adj
             x = v_x_adj * time_stp
             x_total += x
             dist.append(x_total)
             
-            density_at_alt = miss.rho[int(y_total)]
+            density_at_alt = miss.rho[math.ceil(y_total)]
 
             q = (1/2) * density_at_alt * v_x_adj**2
             L = W * np.cos(np.arctan(slope))
@@ -145,7 +147,7 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
             D = L / L_D
             T = D + W * np.sin(np.arctan(slope))
 
-            fuel, cap = fuel_burn(T, time_stp, prp, AC, v_cruise, v_climb, 0, n, cap)
+            fuel, cap, _ = fuel_burn(T, time_stp, prp, AC, v_cruise, v_climb, 0, n, cap, charge_status)
             m_fuel.append(fuel)
             t += time_stp
             W -= fuel * g
@@ -161,7 +163,7 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
         D = L / L_D
         T = D + W * np.sin(np.arctan(slope))
 
-        fuel, cap = fuel_burn(T, time_stp, prp, AC, v_cruise, 0, t, n, cap)
+        fuel, cap, charge_status = fuel_burn(T, time_stp, prp, AC, v_cruise, 0, t, n, cap, charge_status)
         m_fuel.append(fuel)
 
         t += time_stp  # [sec]
