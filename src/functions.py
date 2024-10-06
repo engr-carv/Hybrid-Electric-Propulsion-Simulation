@@ -1,5 +1,8 @@
 import numpy as np
 from dataclasses import dataclass
+import pandas as pd
+from openpyxl import load_workbook
+import sys
 
 def isa_properties(altitude, gamma):
     """
@@ -110,6 +113,11 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
     
     match n:
         
+        case 0:
+            ''' Case to take care of time = 0 '''
+            cap = cap
+            m_fuel = 0
+        
         case 1:                 # Takeoff
             T_TO = 130290                       # thrust at takeoff [N]
             P_TO = T_TO * AC['v2']              # power required for takeoff [W]
@@ -117,24 +125,47 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
             if cap >= P_TO * 300:               # No fuel used if battery is sufficient enough to maintain power requirements for all of takeoff
                 m_fuel = 0
                 cap -= (P_TO * t) / prp['eta_batt_to_prop']
-    
+            elif cap == 0:
+                m_fuel = (P_TO * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
+                cap = 0
             else:
-                m_fuel = (P_TO * (1 - prp['batt']['phi']) * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
-                cap -= (P_TO * t * prp['batt']['phi']) / prp['eta_batt_to_prop']
+                # Only turboshaft contributing to takeoff power
+                m_fuel = (P_TO * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
+                cap = 0
+                '''
+                Battery Supporting Turboshaft
+                #m_fuel = (P_TO * (1 - prp['batt']['phi']) * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
+                #cap -= (P_TO * t * prp['batt']['phi']) / prp['eta_batt_to_prop']
+               '''
 
         case 2:                 # Climb
             P_climb = T * v_climb  # power required to climb
             
-            if cap <= prp['empty_charge']:                                      # If battery is less than or equal to 20% charged
+            if cap <= prp['empty_charge'] and cap != 0 or cap < (P_climb * t):  # If battery is less than or equal to 20% charged and the capacity is non zero or the capacity is not enough to provide required energy
+                m_fuel = (P_climb * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f']) 
+                cap = cap
+                charge_status = True
+                '''
+                Battery gets recharged mid climb option
                 m_fuel = ((P_climb * t) + (prp['batt']['power_thru'] * t)) / \
                 ((prp['eta_ts_to_prop'][2] + prp['eta_ts_to_charge'][2]) * \
                  prp['ts']['delH_f'])                                           # Fuel burnt is that of both charging the battery and providing propulsive power
                 cap += (prp['batt']['power_thru']) * t                          # battery is charged at 1 MW
+                '''
                 
-            elif cap <= prp['full_charge']:                                     # if battery has sufficient charge
+            elif cap <= prp['full_charge'] and cap != 0:                        # if battery has sufficient charge
+                m_fuel = 0
+                cap -= (P_climb * t) / prp['eta_batt_to_prop']
+                '''
+                Battery Supports TS in Climb Option
                 m_fuel = (P_climb * (1 - prp['batt']['phi']) * t) / \
                 (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
                 cap -= (P_climb * t * prp['batt']['phi']) / prp['eta_batt_to_prop']
+                    '''
+                    
+            elif cap == 0:
+                m_fuel = (P_climb * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
+                
 
         case 3:                 # Cruise
             P_cruise = T * v_cruise  # power required for cruise
@@ -143,18 +174,20 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
             t_elapsed_after_climb = t + t_idx
             
             if t_elapsed_after_climb < t_batt_afterClimbTO:                     # No fuel burned if battery is still usable
-                m_fuel = 0  
-                
+                m_fuel = 0
+                cap -= (P_cruise * t) / prp['eta_batt_to_prop']
+            elif cap == 0:
+                m_fuel = (P_cruise * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])                                       
             else:
                 # Charging Phase
-                if cap <= prp['empty_charge']:
-                    # Calculate fuel burn while charging
+                if cap <= prp['empty_charge'] or (cap - (P_cruise * t)) <= 0:
+                    
                     cap, m_fuel = charge_batt(P_cruise, t, 0, 
                                               prp['eta_ts_to_prop'][2], 
                                               prp['ts']['delH_f'], 
                                               prp['batt']['power_thru'], 
                                               prp['eta_ts_to_charge'][2], cap)
-                    charge_status = True                # To ensure that fuel is only used when charging
+                    charge_status = True                                        # To ensure that fuel is only used when charging
                 
                     # Handle case where cap is between 30% and 100% but not at full capacity
                 elif prp['empty_charge'] < cap < prp['full_charge'] and charge_status is True:
@@ -202,3 +235,90 @@ def drag_polar(L, q, AC):
  
     return L_D
 
+def fuel_check(M_fuel_init, m_fuel):
+    """ Check if fuel burned exceeds the initial amount of fuel onboard aircraft"""
+    if m_fuel > M_fuel_init:
+        print("FUEL BURNED EXCEEDS CAPACITY!")
+
+class CarpetPlot:
+    def __init__(self, original_data):
+        self.original_data = original_data
+        self.modified_data = None
+        self.staggered_data = None
+
+    def create_modified_data(self):
+        """ Modify the original matrix to include n extra rows and columns. """
+        p = 0
+        rows, cols = self.original_data.shape
+        if rows != cols:
+            sys.exit('ERROR: Matrix is asymmetric!')
+            
+        else:
+            self.modified_data = np.zeros((rows, cols + cols), dtype=self.original_data.dtype)
+            # Fill the modified data with the original data in the specified pattern
+            for j in range((cols+cols)):
+                for i in range(rows):
+                    if j < cols:
+                        self.modified_data[i, j] = self.original_data[i, j]             # Original data remains in the first part
+                    
+                    # Assign values for the second part based on the specified pattern
+                    if j >= cols:  # Ensure we don't go out of bounds
+                        self.modified_data[i, j] = self.original_data[p,((cols-1)-i)]  # Get next row's value
+                if j >= cols:
+                    p += 1
+
+    
+        # Note: This fills in the second half according to your desired pattern
+
+    def create_staggered_data(self):
+        """ Stagger the modified matrix and prepare it for Excel. """
+        if self.modified_data is None:
+            raise ValueError("Modified matrix not created. Call create_modified_data first.")
+
+        rows, cols = self.modified_data.shape
+        staggered_rows = rows + (rows - 1)
+        self.staggered_data = np.zeros((staggered_rows, cols), dtype=self.modified_data.dtype)
+        u = 1
+        for j in range(cols):
+            for i in range(rows):
+                if j < (rows-1):
+                    self.staggered_data[i + (rows-(1+j)), j] = self.modified_data[i, j]
+                elif j == rows or j == (rows-1):
+                    self.staggered_data[i, j] = self.modified_data[i, j]
+                elif j > rows:
+                    self.staggered_data[i + u, j] = self.modified_data[i, j]
+            if j > rows:
+                u += 1
+                    
+    def to_excel(self, filename, sheet_name):
+        """ Export the staggered matrix to an existing Excel file or create a new one. """
+        if self.staggered_data is None:
+            raise ValueError("Staggered matrix not created. Call create_staggered_matrix first.")
+    
+        staggered_df = pd.DataFrame(self.staggered_data).replace(0, np.nan)
+    
+        try:
+            # Load the existing workbook
+            book = load_workbook(filename)
+    
+            # Check if all sheets are hidden
+            all_sheets_hidden = all(book[sheet].sheet_state == 'hidden' for sheet in book.sheetnames)
+    
+            if all_sheets_hidden:
+                # Unhide the first sheet if all are hidden
+                first_sheet = book.active  # Get the active sheet
+                first_sheet.sheet_state = 'visible'  # Unhide it
+    
+            # Check if the sheet already exists
+            if sheet_name in book.sheetnames:
+                raise ValueError(f"Sheet '{sheet_name}' already exists. Please choose a different name.")
+    
+            # Write to a new sheet
+            with pd.ExcelWriter(filename, engine='openpyxl', mode='a') as writer:
+                staggered_df.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
+            
+        except FileNotFoundError:
+            # If the file does not exist, create a new one
+            staggered_df.to_excel(filename, sheet_name=sheet_name, index=False, header=False)
+        
+        print(f"Staggered matrix exported to {filename} in sheet '{sheet_name}'")
