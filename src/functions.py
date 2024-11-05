@@ -50,19 +50,21 @@ def mission_char(cruise_alt, gamma):
     # Generate altitude range in meters
     altitude_range = np.arange(0, cruise_alt + 1, 0.1)                               # Altitudes from when mach climb starts to cruise
 
-    speeds_of_sound = []
-    densities = []
+    # Initialize arrays
+    speeds_of_sound = np.zeros((len(altitude_range), 1), dtype='d')
+    densities = np.zeros((len(altitude_range), 1), dtype='d')
+    
     '''
      Calculate atmospheric properties for each altitude
      calculates the speed of sound for only a certain range of altitudes, but
      calculates the density for the entire range of altitudes
     '''
-    for alt in altitude_range:
+    for i, alt in enumerate(altitude_range):
         rho, a = isa_properties(alt, gamma)
-        speeds_of_sound.append(a)
-        densities.append(rho)
+        speeds_of_sound[i] = a
+        densities[i] = rho
 
-    return MissionCharacteristics(a=np.array(speeds_of_sound), rho=np.array(densities))
+    return MissionCharacteristics(a=speeds_of_sound, rho=densities)
 
 def prop_char(power_thru, phi, spe, batt_m, eta_g, eta_inv, eta_c, eta_em, 
               eta_prop):
@@ -87,7 +89,7 @@ def prop_char(power_thru, phi, spe, batt_m, eta_g, eta_inv, eta_c, eta_em,
     
     # Turboshaft Engine
     prp['ts'] = {'delH_f': 43e6}                                                # Heating value of kerosene [J/kg]
-    eta_therm = [0.7, 0.5, 0.3]                                                 # Thermal efficiency of turboshaft engine [-]
+    eta_therm = [0.7, 0.415, 0.3]                                                 # Thermal efficiency of turboshaft engine [-]
 
     prp['eta_batt_to_prop'] = eta_inv * eta_em * eta_prop * eta_c               # The efficiency to transfer energy from the battery to the propulsors
     prp['eta_ts_to_prop'] = []                                                  # The efficiency to transfer energy from the turboshaft engine to the propulsors
@@ -105,8 +107,18 @@ def charge_batt(P, t, phi, eta_ts_to_prop, delH_f, batt_thru, eta_ts_to_charge, 
          delH_f)                                                                # Fuel burnt is that of both charging the battery and providing propulsive power
     cap += batt_thru * t  
     return cap, m_fuel
+
+def power_logger(P, p, prp, charge_status, n):
+    ''' Function that only runs when TS is running. Compute the power required'''
+    if charge_status is True and n == 3:
+        Power = (p / prp['eta_ts_to_prop'][1]) + (prp['batt']['power_thru'] / prp['eta_ts_to_charge'][1])
+        P.append(Power)
+    else:
+        Power = p / prp['eta_ts_to_prop'][1]
+        P.append(Power)
+    return P
         
-def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
+def fuel_burn(T, t, prp, AC, v, t_idx, n, cap, charge_status, power_log):
     """
     Calculates the fuel burned based on the flight phase.
     """
@@ -126,12 +138,14 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
                 m_fuel = 0
                 cap -= (P_TO * t) / prp['eta_batt_to_prop']
             elif cap == 0:
-                m_fuel = (P_TO * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
+                m_fuel = (P_TO * t) / (prp['eta_ts_to_prop'][1] * prp['ts']['delH_f'])
+                power_log = power_logger(power_log, P_TO, prp, charge_status, n)
                 cap = 0
             else:
                 # Only turboshaft contributing to takeoff power
-                m_fuel = (P_TO * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
+                m_fuel = (P_TO * t) / (prp['eta_ts_to_prop'][1] * prp['ts']['delH_f'])
                 cap = 0
+                power_log = power_logger(power_log, P_TO, prp, charge_status, n)
                 '''
                 Battery Supporting Turboshaft
                 #m_fuel = (P_TO * (1 - prp['batt']['phi']) * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
@@ -139,12 +153,14 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
                '''
 
         case 2:                 # Climb
-            P_climb = T * v_climb  # power required to climb
+            P_climb = T * v  # power required to climb
             
             if cap <= prp['empty_charge'] and cap != 0 or cap < (P_climb * t):  # If battery is less than or equal to 20% charged and the capacity is non zero or the capacity is not enough to provide required energy
-                m_fuel = (P_climb * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f']) 
+                m_fuel = (P_climb * t) / (prp['eta_ts_to_prop'][1] * prp['ts']['delH_f']) 
                 cap = cap
                 charge_status = True
+                power_log = power_logger(power_log, P_climb, prp, charge_status, n)
+                
                 '''
                 Battery gets recharged mid climb option
                 m_fuel = ((P_climb * t) + (prp['batt']['power_thru'] * t)) / \
@@ -164,11 +180,12 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
                     '''
                     
             elif cap == 0:
-                m_fuel = (P_climb * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])
+                m_fuel = (P_climb * t) / (prp['eta_ts_to_prop'][1] * prp['ts']['delH_f'])
+                power_log = power_logger(power_log, P_climb, prp, charge_status)
                 
 
         case 3:                 # Cruise
-            P_cruise = T * v_cruise  # power required for cruise
+            P_cruise = T * v  # power required for cruise
             t_batt_afterClimbTO = cap / (P_cruise * prp['eta_batt_to_prop'])
             
             t_elapsed_after_climb = t + t_idx
@@ -177,26 +194,28 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
                 m_fuel = 0
                 cap -= (P_cruise * t) / prp['eta_batt_to_prop']
             elif cap == 0:
-                m_fuel = (P_cruise * t) / (prp['eta_ts_to_prop'][2] * prp['ts']['delH_f'])                                       
+                m_fuel = (P_cruise * t) / (prp['eta_ts_to_prop'][1] * prp['ts']['delH_f'])
+                power_log = power_logger(power_log, P_cruise, prp, charge_status, n)                                       
             else:
                 # Charging Phase
                 if cap <= prp['empty_charge'] or (cap - (P_cruise * t)) <= 0:
                     
                     cap, m_fuel = charge_batt(P_cruise, t, 0, 
-                                              prp['eta_ts_to_prop'][2], 
+                                              prp['eta_ts_to_prop'][1], 
                                               prp['ts']['delH_f'], 
                                               prp['batt']['power_thru'], 
-                                              prp['eta_ts_to_charge'][2], cap)
+                                              prp['eta_ts_to_charge'][1], cap)
                     charge_status = True                                        # To ensure that fuel is only used when charging
-                
+                    power_log = power_logger(power_log, P_cruise, prp, charge_status, n)
                     # Handle case where cap is between 30% and 100% but not at full capacity
                 elif prp['empty_charge'] < cap < prp['full_charge'] and charge_status is True:
                     
                         cap, m_fuel = charge_batt(P_cruise, t, 0, 
-                                              prp['eta_ts_to_prop'][2], 
+                                              prp['eta_ts_to_prop'][1], 
                                               prp['ts']['delH_f'], 
                                               prp['batt']['power_thru'], 
-                                              prp['eta_ts_to_charge'][2], cap)
+                                              prp['eta_ts_to_charge'][1], cap)
+                        power_log = power_logger(power_log, P_cruise, prp, charge_status, n)
                         # Ensure the battery does not exceed full capacity
                         if cap > prp['full_charge']:
                             cap = prp['full_charge']  # Set to max capacity if exceeded
@@ -223,7 +242,7 @@ def fuel_burn(T, t, prp, AC, v_cruise, v_climb, t_idx, n, cap, charge_status):
                             cap = prp['empty_charge'] # Set to minimum capacity if below  
      
 
-    return m_fuel, cap, charge_status
+    return m_fuel, cap, charge_status, power_log
 
 def drag_polar(L, q, AC):
     """
@@ -232,14 +251,76 @@ def drag_polar(L, q, AC):
     c_l = L / (q * AC['S']) # Coefficient of lift
     c_d = AC['c_d0'] + (c_l ** 2) / (np.pi * AC['AR'] * AC['e']) # Coefficient of drag
     L_D = c_l / c_d # Lift-to-drag ratio
- 
     return L_D
 
 def fuel_check(M_fuel_init, m_fuel):
     """ Check if fuel burned exceeds the initial amount of fuel onboard aircraft"""
     if m_fuel > M_fuel_init:
         print("FUEL BURNED EXCEEDS CAPACITY!")
-
+        
+def initial_fuel_calculator(AC, payloadMass=None, batt_m=None, payloadMassArray=None, batteryMassArray=None, specificEnergyArray=None, specificEnergy=None):
+    
+    if payloadMassArray is None:
+        if batteryMassArray is not None and specificEnergyArray is not None:
+            FuelMass = np.zeros(len(batteryMassArray))
+            for u, batt_mass in enumerate(batteryMassArray):
+                for specificEnergy in specificEnergyArray:
+                    if specificEnergy == 0:
+                        FuelMass[u] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
+                    else:
+                        FuelMass[u] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_mass
+            fuel_to_batt_ratio = FuelMass / batteryMassArray
+            
+        elif batteryMassArray is not None:
+            FuelMass = np.zeros(len(batteryMassArray))
+            for z, batt_mass in enumerate(batteryMassArray):
+                FuelMass[z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_mass)
+            fuel_to_batt_ratio = FuelMass / batteryMassArray
+            
+        elif specificEnergyArray is not None:
+            FuelMass = np.zeros([2])
+            u = 0
+            FuelMass[0] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
+            FuelMass[1] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_m
+            fuel_to_batt_ratio = FuelMass / batt_m
+            
+        else:
+            FuelMass = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_m)
+            fuel_to_batt_ratio = FuelMass / batt_m
+    else:
+        if batteryMassArray is not None and specificEnergyArray is not None:
+            FuelMass = np.zeros((len(batteryMassArray), len(payloadMassArray)))
+            for u, batt_mass in enumerate(batteryMassArray):
+                for specificEnergy in specificEnergyArray:
+                    for z, payloadMass in enumerate(payloadMassArray):
+                        if specificEnergy == 0:
+                            FuelMass[u, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
+                        else:
+                            FuelMass[u, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_mass
+            fuel_to_batt_ratio = FuelMass / batteryMassArray
+            
+        elif batteryMassArray is not None:
+            FuelMass = np.zeros((len(batteryMassArray), len(payloadMassArray)))
+            for u, batt_mass in enumerate(batteryMassArray):
+                for z, payloadMass in enumerate(payloadMassArray):
+                    FuelMass[u, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_mass)
+            fuel_to_batt_ratio = FuelMass / batteryMassArray
+            
+        elif specificEnergyArray is not None:
+            FuelMass = np.zeros([2, len(payloadMassArray)])
+            for z, payloadMass in enumerate(payloadMassArray):
+                FuelMass[0, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
+                FuelMass[1, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_m
+            fuel_to_batt_ratio = FuelMass / batt_m
+            
+        else:
+            FuelMass = np.zeros([len(payloadMassArray)])
+            for z, payloadMass in enumerate(payloadMassArray):
+                FuelMass[z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_m)
+            fuel_to_batt_ratio = FuelMass / batt_m
+            
+    return FuelMass, fuel_to_batt_ratio
+        
 class CarpetPlot:
     def __init__(self, original_data):
         self.original_data = original_data
@@ -277,16 +358,22 @@ class CarpetPlot:
 
         rows, cols = self.modified_data.shape
         staggered_rows = rows + (rows - 1)
-        self.staggered_data = np.zeros((staggered_rows, cols), dtype=self.modified_data.dtype)
+        # Create a new array with an extra column for the row numbers
+        self.staggered_data = np.zeros((staggered_rows, cols + 1), dtype=self.modified_data.dtype)
+ 
+        # Fill the first column with row numbers
+        for i in range(staggered_rows):
+            self.staggered_data[i, 0] = i + 1  # Row numbers starting from 1
+            
         u = 1
         for j in range(cols):
             for i in range(rows):
                 if j < (rows-1):
-                    self.staggered_data[i + (rows-(1+j)), j] = self.modified_data[i, j]
+                    self.staggered_data[i + (rows-(1+j)), j+1] = self.modified_data[i, j]
                 elif j == rows or j == (rows-1):
-                    self.staggered_data[i, j] = self.modified_data[i, j]
+                    self.staggered_data[i, j+1] = self.modified_data[i, j]
                 elif j > rows:
-                    self.staggered_data[i + u, j] = self.modified_data[i, j]
+                    self.staggered_data[i + u, j+1] = self.modified_data[i, j]
             if j > rows:
                 u += 1
                     
