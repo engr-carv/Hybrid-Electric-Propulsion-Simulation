@@ -140,7 +140,7 @@ def power_logger(powerArray, PowerToMaintainFlight, hybridizationFactor,
                  batteryPowerThroughput, charge_status, n):
     ''' Function that only runs when TS is running. Compute the power required'''
     
-    new_eta_ts_to_prop = eta_ts_to_prop / eta_therm
+    new_eta_ts_to_prop = eta_ts_to_prop / eta_therm # divide by eta_therm because looking for efficiencies AFTER TS outputs power
     
     if n == 1 or 2 or 11 or 12 or 21 or 22:
         Preq = PowerToMaintainFlight / new_eta_ts_to_prop
@@ -182,6 +182,13 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
         case 23 = Cyclic Charging
     """
     
+    '''
+    if 10 < n < 20 and cap == 0:
+        n = 11
+    elif 20 < n and cap == 0:
+        n = 22
+    '''       
+    
     match n:
         
         case 0:
@@ -189,7 +196,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
             cap = cap
             m_fuel = 0
             P = 0
-        
+            power_log.append(0)
         
         
             ''' TAKEOFF OPTIONS '''
@@ -212,14 +219,15 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
             P = T_TO * takeoffVelocity                  # power required for takeoff [W]
             
             # if sufficient capacity, then use battery only
-            if cap >= P * 300: 
+            if cap >= P * t: 
                 m_fuel = 0
                 cap -= (P * t) / eta_batt_to_prop
+                power_log.append(0)
             
             # if no battery is present, use turboshaft only
             elif cap == 0:
                 m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
-                cap = 0
+                cap = cap
                 
                 power_log = power_logger(power_log, P, hybridizationFactor, eta_ts_to_prop, 
                                          eta_ts_to_charge, eta_therm, 
@@ -230,7 +238,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
             else:
                 # Only turboshaft contributing to takeoff power if battery does not have enough capacity
                 m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
-                cap = 0
+                cap = cap
                 
                 power_log = power_logger(power_log, P, hybridizationFactor, eta_ts_to_prop, 
                                          eta_ts_to_charge, eta_therm, 
@@ -286,6 +294,8 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
                 
                 m_fuel = 0
                 cap -= (P * t) / eta_batt_to_prop
+                
+                power_log.append(0)
             
             elif cap == 0:
                 m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
@@ -341,6 +351,8 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
                 cap -= (P * t) / eta_batt_to_prop # Deplete the battery
                 
                 charge_status = False
+                
+                power_log.append(0)
                     
                 # Deplete battery without using fuel
             elif batteryEmptyChargeCap < cap < batteryFullChargeCap and charge_status is False:
@@ -348,6 +360,8 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
                     
                     # Deplete the battery until it reaches 30%
                     cap -= (P * t) / eta_batt_to_prop  # Deplete the battery
+                    
+                    power_log.append(0)
                     
                     # Ensure the capacity does not fall below 30%
                     if cap < batteryEmptyChargeCap:
@@ -395,6 +409,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
             if cap == batteryFullChargeCap:
                 # No fuel burned while battery is being depleted
                 m_fuel = 0
+                power_log.append(0)
                 
                 # Deplete the battery until it reaches 30%
                 cap -= (P * t) / eta_batt_to_prop  # Deplete the battery
@@ -402,6 +417,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
                 # Deplete battery without using fuel
             elif batteryEmptyChargeCap < cap < batteryFullChargeCap:
                     m_fuel = 0;
+                    power_log.append(0)
                     
                     # Deplete the battery until it reaches 30%
                     cap -= (P * t) / eta_batt_to_prop # Deplete the battery
@@ -436,6 +452,8 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
             if cap > energyReqRemaining and cap > batteryEmptyChargeCap:
                 m_fuel = 0
                 cap -= (P * t) / eta_batt_to_prop
+                
+                power_log.append(0)
                 
             else:
                 m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
@@ -510,6 +528,8 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
                     cap -= (P * t) / eta_batt_to_prop # Deplete the battery
                     
                     charge_status = False
+                    
+                    power_log.append(0)
                         
                     # Deplete battery without using fuel
                  elif batteryEmptyChargeCap < cap < batteryFullChargeCap and charge_status is False:
@@ -518,12 +538,13 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
                         # Deplete the battery until it reaches 30%
                         cap -= (P * t) / eta_batt_to_prop  # Deplete the battery
                         
+                        power_log.append(0)
+                        
                         # Ensure the capacity does not fall below 30%
                         if cap < batteryEmptyChargeCap:
                             m_fuel = m_fuel + ((P * t) / (eta_ts_to_prop * heatingValue))
                             cap = batteryEmptyChargeCap # Set to minimum capacity if below  
      
-
     return m_fuel, cap, charge_status, power_log, P
 
 def drag_polar_parabolic(L, q, S, c_d0, pi_AR_e):
@@ -723,3 +744,61 @@ class CarpetPlot:
             staggered_df.to_excel(filepath, sheet_name=sheet_name, index=False, header=False)
     
         print(f"Staggered matrix exported to {filepath} in sheet '{sheet_name}'")
+
+def extract_optimized_batt_and_fuel(file_path, sheet_name):
+    """
+    Reads an Excel workbook, finds the sheet named 'Config ##' (where ## is the given sheet_number),
+    and extracts two sets of 6x6 matrices four times, storing them in two 6x6x4 NumPy arrays.
+    
+    Parameters:
+        file_path (str): Path to the Excel file.
+        sheet_number (int): The number replacing '##' in 'Config ##'.
+        row_offsets (list of int): List of starting row indices for each of the 4 extractions.
+        col_offsets (tuple): (col_offset_1, col_offset_2) - starting columns for the two matrix sets.
+
+    Returns:
+        tuple: Two NumPy arrays of shape (6, 6, 4) containing the extracted matrices.
+    """
+    
+    if not os.path.isfile(file_path):
+        print(f"File not found: {file_path}")
+        return None, None
+
+    print(f"Reading file: {file_path}")
+    
+    ' Starting points both col and rows for each range '
+    colStart = [5, 20, 5, 20]
+    rowStart_Fuel = [13, 13, 43, 43]
+    rowStart_Batt = [23, 23, 53, 53]
+    
+    try:
+        # Load the specified sheet
+        df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl")
+
+        # Initialize NumPy arrays to store four 6x6 matrices for each set
+        massBattery = np.zeros((6, 6, 4))
+        massFuel = np.zeros((6, 6, 4))
+
+        # Define the row-column positions for extracting matrices
+
+        # Loop through 4 sets and extract matrices
+        for j in range(4):  # 4 sets of matrices
+            row_start_idx_Fuel = rowStart_Fuel[j]  # Get corresponding row index
+            row_start_idx_Batt = rowStart_Batt[j]  # Get corresponding row index
+            col_start_idx = colStart[j]
+            
+            fuel_matrix = df.iloc[row_start_idx_Fuel:row_start_idx_Fuel+6, col_start_idx:col_start_idx+6].to_numpy()
+            
+            batt_matrix = df.iloc[row_start_idx_Batt:row_start_idx_Batt+6, col_start_idx:col_start_idx+6].to_numpy()
+
+            # Extract the first 6x6 matrix set (fuel)
+            massFuel[:, :, j] = fuel_matrix
+
+            # Extract the second 6x6 matrix set (battery)
+            massBattery[:, :, j] = batt_matrix
+            
+        return massBattery, massFuel
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return None, None
