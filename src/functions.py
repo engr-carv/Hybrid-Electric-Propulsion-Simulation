@@ -70,7 +70,7 @@ def mission_char(cruise_alt, gamma):
     MissionCharacteristics: A dataclass containing speed of sound and density.
     """
     # Generate altitude range in meters
-    altitude_range = np.arange(0, cruise_alt + 1, 0.1)                               # Altitudes from when mach climb starts to cruise
+    altitude_range = np.arange(0, cruise_alt + 1, 0.1)                               # Altitudes from ground level to cruise
 
     # Initialize arrays
     speeds_of_sound = np.zeros((len(altitude_range), 1), dtype='d')
@@ -118,7 +118,15 @@ def prop_char(power_thru, phi, spe, batt_m, eta_therm, eta_g, eta_inv, eta_c, et
     prp['eta_ts_to_charge'] = eta_therm * eta_c * eta_g * eta_inv           # The efficiency to transfer energy from the turboshaft engine to the battery for charging
 
     return prp
-        
+
+def actuatorDiskTheory(T, rhoAtAlt, trueVelocity, Dprop):
+    eta_prop = 2 / \
+    (1 + np.sqrt(1 + (T / (0.5 * rhoAtAlt * trueVelocity^2 * (np.pi / 4) * Dprop^2))))
+    
+    eta_prop = 0.9 * eta_prop
+    
+    return eta_prop
+
 def charge_batt(P, t, eta_ts_to_prop, delH_f, batt_thru, eta_ts_to_charge, cap):
     ''' Calculates the fuel burn for charging the battery and adds capacity to said battery '''
     m_fuel = ((P * t) + (batt_thru * t)) / \
@@ -407,7 +415,6 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                         cap = batteryEmptyChargeCap # Set to minimum capacity if below
                         
             elif cap <= batteryEmptyChargeCap or (cap - (P_cruise * t)) <= 0:
-                
                 m_fuel = (P_cruise * t) / (eta_ts_to_prop * heatingValue)
                 
                 power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
@@ -469,12 +476,14 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                 # Charging Phase
                 if cap <= batteryEmptyChargeCap or (cap - ((P_cruise * t) / eta_batt_to_prop)) <= 0:
                     
-                    cap, m_fuel = charge_batt(P_cruise, t, 0, 
+                    cap, m_fuel = charge_batt(P_cruise, t, 
                                               eta_ts_to_prop, 
                                               heatingValue, 
                                               batteryPowerThroughput, 
                                               eta_ts_to_charge, cap)
+                    
                     charge_status = True                                        # To ensure that fuel is only used when charging
+                    
                     power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
@@ -484,11 +493,12 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                 # Handle case where cap is between 30% and 100% but not at full capacity
                 elif batteryEmptyChargeCap < cap < batteryFullChargeCap and charge_status is True:
                     
-                    cap, m_fuel = charge_batt(P_cruise, t, 0, 
+                    cap, m_fuel = charge_batt(P_cruise, t, 
                                               eta_ts_to_prop, 
                                               heatingValue, 
                                               batteryPowerThroughput, 
                                               eta_ts_to_charge, cap)
+                    
                     power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 

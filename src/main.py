@@ -15,10 +15,13 @@ electric aircraft
     GNU General Public License for more details.
 """
 
+'NEW CLIMB OPTION'
+
 #from collections import deque
 import numpy as np
 #import matplotlib.pyplot as plt
-#import os
+import os
+import sys
 #import json
 from functions import mission_char, prop_char, fuel_burn, \
     drag_polar_parabolic, fuel_check, CarpetPlot, initial_fuel_calculator, \
@@ -27,8 +30,8 @@ from functions import mission_char, prop_char, fuel_burn, \
 directory_check()
 
 ''' Constants and Conversion Factors '''
-NAUMI_TO_MET = 1852     # Conversion factor of Nautical Miles to Meters
-FT_TO_MET = 0.3048      # Conversion factor of Feet to Meters
+NAUMI_TO_MET = 1852     # Conversion factor of Nautical Miles to Meters [m/nm]
+FT_TO_MET = 0.3048      # Conversion factor of Feet to Meters [m/ft]
 WH_TO_J = 3600          # Coversion factor of Wh to J
 g = 9.81                # Acceleration due to gravity [m/s2]
 gamma = 1.4             # Specific heat ratio of air [-]
@@ -164,11 +167,20 @@ q_cruise = (1/2) * miss.rho[-1] * v_cruise**2       # Dynamic pressure at cruise
 DATA PROVIDED BY EUROCONTROL
 https://contentzone.eurocontrol.int/aircraftperformance/details.aspx?ICAO=A20N&NameFilter=A320
 '''
-phase_altitudes = np.array([5000, 15000, 24000, 39000]) * FT_TO_MET       # [ft] -> [m]
-roc = np.array([2200, 2000, 1500, 1000]) * FT_TO_MET / 60           # [fpm] -> [m/s]
-v_x = np.array([175, 290, 290]) * (NAUMI_TO_MET / 3600)             # [kts] -> [m/s]
+phase_altitudes = np.array([5000, 15000, 24000, 39000]) * FT_TO_MET             # [ft] -> [m]
+roc = np.array([2200, 2000, 1500, 1000]) * FT_TO_MET / 60                       # [fpm] -> [m/s]
+v_x_init = 250 * (NAUMI_TO_MET / 3600)                                          # [kts] -> [m/s]
+
+a_x = ((cruise_M * miss.a[phase_altitudes[3]]) - v_x_init) / (8.5 * 60)                      # constant acceleration from 10k feet to 24k feet (start of mach climb)
+
+if time_step_sec >= 8.5*60:
+    v_x_constAccel = cruise_M * miss.a[phase_altitudes[3]]
+else:
+    velocityTimeSteps = np.arange(0, (8.5*60)+1, time_step_sec, dtype='d') 
+    v_x_constAccel = v_x_init + a_x * velocityTimeSteps
 
 ''' Precomputation '''
+
 "CONSTANTS"
 pi_AR_e = np.pi * AC['AR'] * AC['e']  # For drag calculation
 rho_0 = miss.rho[0]  # sea level density
@@ -213,13 +225,14 @@ thrustArray = []
 machTime = []
 power_log = []
 init_cap = prp['full_charge']   
-cap = init_cap                  # Battery capacity at 100%
+cap = init_cap                  # Battery capacity at 100% [J]
 charge_status = False           # Initialize charge_status to not charging
 flight_phase = 0                           # Index for determining which rates of climb and horizontal velocites to use in which phases of flight
 n = 0
 total_altitude_gained = 0                     # Total horizontal distance covered [m]
 x_total = 0                     # Total vertical distance covered [m]
 total_time_elapsed_sec = 0                           # Total time the has passed [sec]
+time_elapsed_from10k = 0       # Time elapsed since hitting an altitude of 10k feet (for use in indexing for horizontal speed between 10k and 24k feet) [sec]
 dist = [0]                      # Array to contain instantaneous horizontal distance for graphing purposes
 alti = [0]                      # Array to contain instantaneous vertical distance for graphing purposes
 W = weightAircraft
@@ -242,7 +255,7 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
         W -= fuel * g  # [N]
         n = 1
 
-    elif total_time_elapsed_sec > 300 and total_altitude_gained != cruise_alt:  # climb
+    elif total_time_elapsed_sec > 300 and total_altitude_gained != cruise_alt:  # climbs
         n = 11
         y = time_step_sec * np.float64(roc[flight_phase])  # altitude gained [m]
         total_altitude_gained += y
@@ -256,26 +269,33 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
         if flight_phase <= 2:  # normal climbs
             dynamic_conditions_idx = int(round(total_altitude_gained, 1)*10)
             density_at_alt = np.float64(miss.rho[dynamic_conditions_idx])
-            
-            horizontalVelocity = np.float64(v_x[flight_phase])
             rateOfClimb = np.float64(roc[flight_phase])
             
+            if total_altitude_gained < (10e3 * FT_TO_MET):
+                horizontalVelocity = v_x_init
+            else:
+                v_x_constAccelIDX = int(time_elapsed_from10k / time_step_sec)
+                horizontalVelocity = v_x_constAccel[v_x_constAccelIDX]
+                time_elapsed_from10k += time_step_sec
+              
             v_x_corrected = horizontalVelocity * np.sqrt(rho_0 / density_at_alt)
             v_climb = np.sqrt(rateOfClimb**2 + v_x_corrected**2)  # [m/s]
             slope = rateOfClimb / v_x_corrected
+            sineOfClimb = rateOfClimb / v_climb
+            cosineOfClimb = v_x_corrected / v_climb
             x = v_x_corrected * time_step_sec
             x_total += x
             dist.append(x_total)
             
-            arctan_slope = np.arctan(slope)
+            climbAngle = np.arctan(slope)
             q = (1/2) * density_at_alt * v_climb**2
-            L = W * np.cos(arctan_slope)
+            L = W * cosineOfClimb
             L_D = drag_polar_parabolic(L, q, AC['S'], AC['c_d0'], pi_AR_e)
             #add_L_D_to_3d_deque(L_D_3d_deque, k, i, L_D)
             D = L / L_D
-            T = D + W * np.sin(arctan_slope)
+            T = D + W * sineOfClimb
             T = np.float64(T)
-            
+                
             fuel, cap, charge_status, power_log = fuel_burn(T, time_step_sec, 
                                   eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, 
                                   heatingValue, takeoffVelocity, hybridizationFactor,
@@ -300,15 +320,17 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
             rateOfClimb = np.float64(roc[flight_phase])
             v_climb = np.sqrt(rateOfClimb**2 + v_x_mach**2)   # [m/s]
             slope = rateOfClimb / v_x_mach
+            sineOfClimb = rateOfClimb / v_climb
+            cosineOfClimb = v_x_mach / v_climb
             
             
-            arctan_slope = np.arctan(slope)
+            climbAngle = np.arctan(slope)
             q = (1/2) * density_at_alt * v_climb**2
-            L = W * np.cos(arctan_slope)
+            L = W * cosineOfClimb
             L_D = drag_polar_parabolic(L, q, AC['S'], AC['c_d0'], pi_AR_e)
             #add_L_D_to_3d_deque(L_D_3d_deque, k, i, L_D)
             D = L / L_D
-            T = D + W * np.sin(arctan_slope)
+            T = D + W * sineOfClimb
             T = np.float64(T)
 
             fuel, cap, charge_status, power_log = fuel_burn(T, time_step_sec, 
@@ -339,7 +361,7 @@ while x_total < mission_range:          # calculate the fuel burn as long as the
                       heatingValue, takeoffVelocity, hybridizationFactor,
                       v_cruise, batteryEmptyChargeCap, batteryFullChargeCap, 
                       batt_power_thru, mission_range, x_total,
-                      0, n, cap, charge_status, power_log)
+                      total_time_elapsed_sec, n, cap, charge_status, power_log)
         m_fuel.append(fuel)
 
         total_time_elapsed_sec += time_step_sec  # [sec]
