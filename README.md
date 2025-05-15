@@ -1,2 +1,2 @@
-# hybrid_elec_prop_calc
-A propulsion calculator for determining the fuel burned from a hybrid electric architecture for aerospace applications
+# Series Hybrid Electric Propulsion Tool
+A tool for calculating the fuel burned from a series hybrid electric architecture for aerospace applications
