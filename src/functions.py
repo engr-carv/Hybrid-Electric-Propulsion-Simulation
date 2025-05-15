@@ -185,6 +185,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
             ''' Case to take care of time = 0 '''
             cap = cap
             m_fuel = 0
+            P = 0
         
         
         
@@ -192,12 +193,12 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
         case 1:                 
             # Takeoff turboshaft-only prop
             T_TO = 130290                               # thrust at takeoff [N]
-            P_TO = T_TO * takeoffVelocity               # power required for takeoff [W]
+            P = T_TO * takeoffVelocity               # power required for takeoff [W]
             
-            m_fuel = (P_TO * t) / (eta_ts_to_prop * heatingValue)
+            m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
             cap = cap
             
-            power_log = power_logger(power_log, P_TO, hybridizationFactor, eta_ts_to_prop, 
+            power_log = power_logger(power_log, P, hybridizationFactor, eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
@@ -205,19 +206,19 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
         case 2:
             # Takeoff battery primary prop
             T_TO = 130290                       # thrust at takeoff [N]
-            P_TO = T_TO * takeoffVelocity                  # power required for takeoff [W]
+            P = T_TO * takeoffVelocity                  # power required for takeoff [W]
             
             # if sufficient capacity, then use battery only
-            if cap >= P_TO * 300: 
+            if cap >= P * 300: 
                 m_fuel = 0
-                cap -= (P_TO * t) / eta_batt_to_prop
+                cap -= (P * t) / eta_batt_to_prop
             
             # if no battery is present, use turboshaft only
             elif cap == 0:
-                m_fuel = (P_TO * t) / (eta_ts_to_prop * heatingValue)
+                m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
                 cap = 0
                 
-                power_log = power_logger(power_log, P_TO, hybridizationFactor, eta_ts_to_prop, 
+                power_log = power_logger(power_log, P, hybridizationFactor, eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
@@ -225,10 +226,10 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
             # if battery capacity is less than energy required for takeoff, use turboshaft 
             else:
                 # Only turboshaft contributing to takeoff power if battery does not have enough capacity
-                m_fuel = (P_TO * t) / (eta_ts_to_prop * heatingValue)
+                m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
                 cap = 0
                 
-                power_log = power_logger(power_log, P_TO, hybridizationFactor, eta_ts_to_prop, 
+                power_log = power_logger(power_log, P, hybridizationFactor, eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
@@ -236,13 +237,13 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
         case 3:
             # Quasi-Parallel
             T_TO = 130290                       # thrust at takeoff [N]
-            P_TO = T_TO * takeoffVelocity             # power required for takeoff [W]
+            P = T_TO * takeoffVelocity             # power required for takeoff [W]
             
             # Quasi-Parallel Takeoff
-            m_fuel = (P_TO * (1 - hybridizationFactor) * t) / (eta_ts_to_prop * heatingValue)
-            cap -= (P_TO * t * hybridizationFactor) / eta_batt_to_prop
+            m_fuel = (P * (1 - hybridizationFactor) * t) / (eta_ts_to_prop * heatingValue)
+            cap -= (P * t * hybridizationFactor) / eta_batt_to_prop
             
-            power_log = power_logger(power_log, P_TO, hybridizationFactor, eta_ts_to_prop, 
+            power_log = power_logger(power_log, P, hybridizationFactor, eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
@@ -251,62 +252,62 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
             ''' CLIMB OPTIONS '''
         case 11: 
             # Climb turboshaft only
-            P_climb = T * currentVelocity  # power required to climb
+            P = T * currentVelocity  # power required to climb
 
-            m_fuel = (P_climb * t) / (eta_ts_to_prop * heatingValue)
+            m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
             cap = cap
             
-            power_log = power_logger(power_log, P_climb, hybridizationFactor, eta_ts_to_prop, 
+            power_log = power_logger(power_log, P, hybridizationFactor, eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
             
         case 12:
             # Climb Battery then Turboshaft, no charging
-            P_climb = T * currentVelocity  # power required to climb
+            P = T * currentVelocity  # power required to climb
             
             # Battery first, then TS for remainder of climb
             if cap <= batteryEmptyChargeCap and cap != 0 or cap < \
-            ((P_climb * t) / eta_batt_to_prop):  # If battery is less than or equal to 20% charged and the capacity is non zero or the capacity is not enough to provide required energy
+            ((P * t) / eta_batt_to_prop):  # If battery is less than or equal to 20% charged and the capacity is non zero or the capacity is not enough to provide required energy
                 
-                m_fuel = (P_climb * t) / (eta_ts_to_prop * heatingValue) 
+                m_fuel = (P * t) / (eta_ts_to_prop * heatingValue) 
                 cap = cap
                 charge_status = True
-                power_log = power_logger(power_log, P_climb, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
                 
             elif cap >= batteryEmptyChargeCap and cap != 0 and cap >= \
-            ((P_climb * t) / eta_batt_to_prop): # if battery has sufficient charge
+            ((P * t) / eta_batt_to_prop): # if battery has sufficient charge
                 
                 m_fuel = 0
-                cap -= (P_climb * t) / eta_batt_to_prop
+                cap -= (P * t) / eta_batt_to_prop
             
             elif cap == 0:
-                m_fuel = (P_climb * t) / (eta_ts_to_prop * heatingValue)
+                m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
                 
-                power_log = power_logger(power_log, P_climb, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
         case 13:
             # Climb Battery with recharging
-            P_climb = T * currentVelocity  # power required to climb
+            P = T * currentVelocity  # power required to climb
             
             # Charging Phase
-            if cap <= batteryEmptyChargeCap or (cap - ((P_climb * t) / eta_batt_to_prop)) <= 0:
+            if cap <= batteryEmptyChargeCap or (cap - ((P * t) / eta_batt_to_prop)) <= 0:
                 
-                cap, m_fuel = charge_batt(P_climb, t, 
+                cap, m_fuel = charge_batt(P, t, 
                                           eta_ts_to_prop, 
                                           heatingValue, 
                                           batteryPowerThroughput, 
                                           eta_ts_to_charge, cap)
                 charge_status = True                                        # To ensure that fuel is only used when charging
                 
-                power_log = power_logger(power_log, P_climb, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -315,13 +316,13 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
             # Handle case where cap is between 30% and 100% but not at full capacity
             elif batteryEmptyChargeCap < cap < batteryFullChargeCap and charge_status is True:
                 
-                cap, m_fuel = charge_batt(P_climb, t, 
+                cap, m_fuel = charge_batt(P, t, 
                                           eta_ts_to_prop, 
                                           heatingValue, 
                                           batteryPowerThroughput, 
                                           eta_ts_to_charge, cap)
                        
-                power_log = power_logger(power_log, P_climb, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -338,7 +339,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                 m_fuel = 0
                 
                 # Deplete the battery until it reaches 30%
-                cap -= (P_climb * t) / eta_batt_to_prop # Deplete the battery
+                cap -= (P * t) / eta_batt_to_prop # Deplete the battery
                 
                 charge_status = False
                     
@@ -347,33 +348,33 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                     m_fuel = 0;
                     
                     # Deplete the battery until it reaches 30%
-                    cap -= (P_climb * t) / eta_batt_to_prop  # Deplete the battery
+                    cap -= (P * t) / eta_batt_to_prop  # Deplete the battery
                     
                     # Ensure the capacity does not fall below 30%
                     if cap < batteryEmptyChargeCap:
-                        m_fuel = m_fuel + ((P_climb * t) / (eta_ts_to_prop * heatingValue))
+                        m_fuel = m_fuel + ((P * t) / (eta_ts_to_prop * heatingValue))
                         cap = batteryEmptyChargeCap # Set to minimum capacity if below  
 
                 
         case 14:
             # Battery Supports TS in Climb, no recharging Option
-            P_climb = T * currentVelocity  # power required to climb
+            P = T * currentVelocity  # power required to climb
             
-            if cap >= (P_climb * t * hybridizationFactor) and cap > batteryEmptyChargeCap: 
-                m_fuel = (P_climb * (1 - hybridizationFactor) * t) / \
+            if cap >= (P * t * hybridizationFactor) and cap > batteryEmptyChargeCap: 
+                m_fuel = (P * (1 - hybridizationFactor) * t) / \
                     (eta_ts_to_prop * heatingValue)
-                cap -= (P_climb * t * hybridizationFactor) / eta_batt_to_prop
+                cap -= (P * t * hybridizationFactor) / eta_batt_to_prop
                 
-                power_log = power_logger(power_log, P_climb, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
                                          charge_status, n)
             
-            elif cap < (P_climb * t * hybridizationFactor) or cap <= batteryEmptyChargeCap:
-                m_fuel =  m_fuel = (P_climb * t) / (eta_ts_to_prop * heatingValue)
+            elif cap < (P * t * hybridizationFactor) or cap <= batteryEmptyChargeCap:
+                m_fuel =  m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
                 
-                power_log = power_logger(power_log, P_climb, 0, 
+                power_log = power_logger(power_log, P, 0, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -381,7 +382,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                 
                 # Ensure the capacity does not fall below 30%
                 if cap < batteryEmptyChargeCap:
-                    m_fuel = m_fuel + ((P_climb * t) / (eta_ts_to_prop * heatingValue))
+                    m_fuel = m_fuel + ((P * t) / (eta_ts_to_prop * heatingValue))
                     cap = batteryEmptyChargeCap # Set to minimum capacity if below  
                 else: 
                     cap = cap
@@ -392,14 +393,14 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
             ''' CRUISE OPTIONS '''
         case 21:
             # Battery used at beginning of cruise, then turboshaft the rest of the way
-            P_cruise = T * currentVelocity  # power required for cruise
+            P = T * currentVelocity  # power required for cruise
             
             if cap == batteryFullChargeCap:
                 # No fuel burned while battery is being depleted
                 m_fuel = 0
                 
                 # Deplete the battery until it reaches 30%
-                cap -= (P_cruise * t) / eta_batt_to_prop  # Deplete the battery
+                cap -= (P * t) / eta_batt_to_prop  # Deplete the battery
                 
                 charge_status = False
                     
@@ -408,16 +409,16 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                     m_fuel = 0;
                     
                     # Deplete the battery until it reaches 30%
-                    cap -= (P_cruise * t) / eta_batt_to_prop # Deplete the battery
+                    cap -= (P * t) / eta_batt_to_prop # Deplete the battery
                     
                     # Ensure the capacity does not fall below 30%
                     if cap < batteryEmptyChargeCap:
                         cap = batteryEmptyChargeCap # Set to minimum capacity if below
                         
-            elif cap <= batteryEmptyChargeCap or (cap - (P_cruise * t)) <= 0:
-                m_fuel = (P_cruise * t) / (eta_ts_to_prop * heatingValue)
+            elif cap <= batteryEmptyChargeCap or (cap - (P * t)) <= 0:
+                m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
                 
-                power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -425,28 +426,28 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                 
                 # Ensure the capacity does not fall below 30%
                 if cap < batteryEmptyChargeCap:
-                    m_fuel = m_fuel + ((P_cruise * t) / (eta_ts_to_prop * heatingValue))
+                    m_fuel = m_fuel + ((P * t) / (eta_ts_to_prop * heatingValue))
                     cap = batteryEmptyChargeCap # Set to minimum capacity if below
                 else:
                     cap = cap
             
         case 22:
             # Turboshaft first, then battery rest of the way
-            P_cruise = T * currentVelocity  # power required for cruise
+            P = T * currentVelocity  # power required for cruise
             
             timeRemaining = (missionRange - distanceCovered) / currentVelocity
             
-            energyReqRemaining = (P_cruise * timeRemaining) / eta_batt_to_prop 
+            energyReqRemaining = (P * timeRemaining) / eta_batt_to_prop 
             
             if cap > energyReqRemaining and cap > batteryEmptyChargeCap:
                 m_fuel = 0
-                cap -= (P_cruise * t) / eta_batt_to_prop
+                cap -= (P * t) / eta_batt_to_prop
                 
             else:
-                m_fuel = (P_cruise * t) / (eta_ts_to_prop * heatingValue)
+                m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
                 cap = cap
                 
-                power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -454,19 +455,19 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
            
         case 23:
             # Cyclic Charging
-            P_cruise = T * currentVelocity  # power required for cruise
+            P = T * currentVelocity  # power required for cruise
             
-            t_batt_afterClimbTO = cap / (P_cruise * eta_batt_to_prop)
+            t_batt_afterClimbTO = cap / (P * eta_batt_to_prop)
             
             t_elapsed_after_climb = t + t_idx
             
             if t_elapsed_after_climb < t_batt_afterClimbTO:                     # No fuel burned if battery is still usable
                 m_fuel = 0
-                cap -= (P_cruise * t) / eta_batt_to_prop
-            elif cap == 0 or cap < (P_cruise * t):
-                m_fuel = (P_cruise * t) / (eta_ts_to_prop * heatingValue)
+                cap -= (P * t) / eta_batt_to_prop
+            elif cap == 0 or cap < (P * t):
+                m_fuel = (P * t) / (eta_ts_to_prop * heatingValue)
                 
-                power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
+                power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -474,9 +475,9 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                 cap = cap                                   
             else:
                 # Charging Phase
-                if cap <= batteryEmptyChargeCap or (cap - ((P_cruise * t) / eta_batt_to_prop)) <= 0:
+                if cap <= batteryEmptyChargeCap or (cap - ((P * t) / eta_batt_to_prop)) <= 0:
                     
-                    cap, m_fuel = charge_batt(P_cruise, t, 
+                    cap, m_fuel = charge_batt(P, t, 
                                               eta_ts_to_prop, 
                                               heatingValue, 
                                               batteryPowerThroughput, 
@@ -484,7 +485,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                     
                     charge_status = True                                        # To ensure that fuel is only used when charging
                     
-                    power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
+                    power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -493,13 +494,13 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                 # Handle case where cap is between 30% and 100% but not at full capacity
                 elif batteryEmptyChargeCap < cap < batteryFullChargeCap and charge_status is True:
                     
-                    cap, m_fuel = charge_batt(P_cruise, t, 
+                    cap, m_fuel = charge_batt(P, t, 
                                               eta_ts_to_prop, 
                                               heatingValue, 
                                               batteryPowerThroughput, 
                                               eta_ts_to_charge, cap)
                     
-                    power_log = power_logger(power_log, P_cruise, hybridizationFactor, 
+                    power_log = power_logger(power_log, P, hybridizationFactor, 
                                          eta_ts_to_prop, 
                                          eta_ts_to_charge, 
                                          batteryPowerThroughput, 
@@ -516,7 +517,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                     m_fuel = 0
                     
                     # Deplete the battery until it reaches 30%
-                    cap -= (P_cruise * t) / eta_batt_to_prop # Deplete the battery
+                    cap -= (P * t) / eta_batt_to_prop # Deplete the battery
                     
                     charge_status = False
                         
@@ -525,15 +526,15 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop,
                         m_fuel = 0;
                         
                         # Deplete the battery until it reaches 30%
-                        cap -= (P_cruise * t) / eta_batt_to_prop  # Deplete the battery
+                        cap -= (P * t) / eta_batt_to_prop  # Deplete the battery
                         
                         # Ensure the capacity does not fall below 30%
                         if cap < batteryEmptyChargeCap:
-                            m_fuel = m_fuel + ((P_cruise * t) / (eta_ts_to_prop * heatingValue))
+                            m_fuel = m_fuel + ((P * t) / (eta_ts_to_prop * heatingValue))
                             cap = batteryEmptyChargeCap # Set to minimum capacity if below  
      
 
-    return m_fuel, cap, charge_status, power_log
+    return m_fuel, cap, charge_status, power_log, P
 
 def drag_polar_parabolic(L, q, S, c_d0, pi_AR_e):
     """
