@@ -1,0 +1,29 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Series-Hybrid-Electric-Propulsion-Tool
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Carver J
+    family-names: Glomb
+    email: carverglomb@gmail.com
+    affiliation: >-
+      Californiia Polytechnic State University - San Luis
+      Obispo
+    orcid: 'https://orcid.org/0009-0002-4804-1314'
+repository-code: >-
+  https://github.com/engr-carv/Series-Hybrid-Electric-Propulsion-Tool
+keywords:
+  - series
+  - hybrid-electric
+  - propulsion
+  - narrow-body
+  - transport
+  - aircraft
+license: GPL-3.0
+commit: 16d02195919db79b59f1c913d9deae758ae3f182
+date-released: '2025-05-15'
