@@ -359,7 +359,7 @@ def fuel_burn(T, t, eta_ts_to_prop, eta_ts_to_charge, eta_batt_to_prop, eta_ther
                     
                 # Deplete battery without using fuel
             elif batteryEmptyChargeCap < cap < batteryFullChargeCap and charge_status is False:
-                    m_fuel = 0;
+                    m_fuel = 0
                     
                     # Deplete the battery until it reaches 30%
                     cap -= (P * t) / eta_batt_to_prop  # Deplete the battery
