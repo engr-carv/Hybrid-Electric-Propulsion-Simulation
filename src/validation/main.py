@@ -148,6 +148,9 @@ for rng_idx, mission_range in enumerate(RANGE):
     dist = []                      # Array to contain instantaneous horizontal distance for graphing purposes
     alti = []                      # Array to contain instantaneous vertical distance for graphing purposes
     W = weightAircraft[rng_idx]
+    T = 0.0                      # Thrust [N]
+    v = 0.0                      # Velocity [m/s]
+    tsfc = 0.0                  # Thrust specific fuel consumption [kg/N/s]
     '''
     #Flight While Loop:
         #A loop that emulates the flightpath of an aircraft, calculating the 
