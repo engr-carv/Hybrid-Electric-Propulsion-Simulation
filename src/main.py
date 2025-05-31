@@ -25,7 +25,7 @@ import sys
 #import time as timerboss
 #import json
 from functions import mission_char, prop_char, fuel_burn, \
-    drag_polar_parabolic, fuel_check, CarpetPlot, initial_fuel_calculator, \
+    drag_polar_parabolic, fuel_check, CarpetPlot, \
         directory_check, add_L_D_to_3d_deque, extract_optimized_batt_and_fuel
 
 #start_time = timerboss.perf_counter()
@@ -232,11 +232,11 @@ for rng_idx, mission_range in enumerate(RANGE):
             flight_phase = 0                           # Index for determining which rates of climb and horizontal velocites to use in which phases of flight
             n = 0
             total_altitude_gained = 0                     # Total horizontal distance covered [m]
-            x_total = 0                     # Total vertical distance covered [m]
-            total_time_elapsed_sec = 0                           # Total time the has passed [sec]
-            time_elapsed_from10k = 0       # Time elapsed since hitting an altitude of 10k feet (for use in indexing for horizontal speed between 10k and 24k feet) [sec]
-            dist = [0]                      # Array to contain instantaneous horizontal distance for graphing purposes
-            alti = [0]                      # Array to contain instantaneous vertical distance for graphing purposes
+            x_total = 0.0                     # Total vertical distance covered [m]
+            total_time_elapsed_sec = 0.0                           # Total time the has passed [sec]
+            time_elapsed_from10k = 0.0       # Time elapsed since hitting an altitude of 10k feet (for use in indexing for horizontal speed between 10k and 24k feet) [sec]
+            dist = []                      # Array to contain instantaneous horizontal distance for graphing purposes
+            alti = []                      # Array to contain instantaneous vertical distance for graphing purposes
             #W = weightAircraft[i, rng_idx]
             W = weightAircraft[i, k, rng_idx]
             #W = weightAircraft

@@ -34,7 +34,7 @@ def isa_properties(altitude, gamma):
     altitude (float): Altitude in feet.
 
     Returns:
-    tuple: Temperature (K), Pressure (Pa), Density (kg/m³), Speed of Sound (m/s)
+    tuple: Temperature (K), Pressure (Pa), Density (kg/m^3), Speed of Sound (m/s)
     """
     # Constants
     T0 = 288.15 # Sea level standard temperature [K]
@@ -595,69 +595,6 @@ def fuel_check(M_fuel_init, m_fuel):
     if m_fuel > M_fuel_init:
         print("FUEL BURNED EXCEEDS CAPACITY!")
         
-def initial_fuel_calculator(AC, payloadMass=None, batt_m=None, payloadMassArray=None, batteryMassArray=None, specificEnergyArray=None, specificEnergy=None):
-    
-    if payloadMassArray is None:
-        if batteryMassArray is not None and specificEnergyArray is not None:
-            FuelMass = np.zeros(len(batteryMassArray))
-            for u, batt_mass in enumerate(batteryMassArray):
-                for specificEnergy in specificEnergyArray:
-                    if specificEnergy == 0:
-                        FuelMass[u] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
-                    else:
-                        FuelMass[u] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_mass
-            fuel_to_batt_ratio = FuelMass / batteryMassArray
-            
-        elif batteryMassArray is not None:
-            FuelMass = np.zeros(len(batteryMassArray))
-            for z, batt_mass in enumerate(batteryMassArray):
-                FuelMass[z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_mass)
-            fuel_to_batt_ratio = FuelMass / batteryMassArray
-            
-        elif specificEnergyArray is not None:
-            FuelMass = np.zeros([2])
-            u = 0
-            FuelMass[0] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
-            FuelMass[1] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_m
-            fuel_to_batt_ratio = FuelMass / batt_m
-            
-        else:
-            FuelMass = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_m)
-            fuel_to_batt_ratio = FuelMass / batt_m
-    else:
-        if batteryMassArray is not None and specificEnergyArray is not None:
-            FuelMass = np.zeros((len(batteryMassArray), len(payloadMassArray)))
-            for u, batt_mass in enumerate(batteryMassArray):
-                for specificEnergy in specificEnergyArray:
-                    for z, payloadMass in enumerate(payloadMassArray):
-                        if specificEnergy == 0:
-                            FuelMass[u, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
-                        else:
-                            FuelMass[u, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_mass
-            fuel_to_batt_ratio = FuelMass / batteryMassArray
-            
-        elif batteryMassArray is not None:
-            FuelMass = np.zeros((len(batteryMassArray), len(payloadMassArray)))
-            for u, batt_mass in enumerate(batteryMassArray):
-                for z, payloadMass in enumerate(payloadMassArray):
-                    FuelMass[u, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_mass)
-            fuel_to_batt_ratio = FuelMass / batteryMassArray
-            
-        elif specificEnergyArray is not None:
-            FuelMass = np.zeros([2, len(payloadMassArray)])
-            for z, payloadMass in enumerate(payloadMassArray):
-                FuelMass[0, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"]
-                FuelMass[1, z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - batt_m
-            fuel_to_batt_ratio = FuelMass / batt_m
-            
-        else:
-            FuelMass = np.zeros([len(payloadMassArray)])
-            for z, payloadMass in enumerate(payloadMassArray):
-                FuelMass[z] = AC["MTOW"] - payloadMass - AC["OperatingEmptyMass"] - (0 if specificEnergy == 0 else batt_m)
-            fuel_to_batt_ratio = FuelMass / batt_m
-            
-    return FuelMass, fuel_to_batt_ratio
-        
 class CarpetPlot:
     def __init__(self, original_data):
         self.original_data = original_data
@@ -728,7 +665,7 @@ class CarpetPlot:
             
             if all_sheets_hidden:
                 # Unhide the first sheet if all are hidden
-                first_sheet = book.active  # Get the active sheet
+                first_sheet = book.worksheets[0]  # Get the first worksheet
                 first_sheet.sheet_state = 'visible'  # Unhide it
             
             # Check if the sheet already exists
